@@ -16,7 +16,8 @@ A=pi*(D^2)/4;                     % 管道横截面积
 
 % 网格划分
 dx=L/N;                         % 单位长度
-t_max=20;                       % 总计算时间
+%t_max=20;                       % 总计算时间
+t_max=1000;                       % 总计算时间
 a=sqrt(K/Rho/(1+K*D/(E*e)));     % 波速
 dt=dx/a;                        % 单位计算时间
 
@@ -30,37 +31,43 @@ R=f*dx/(2*G*D*(A^2));
 % 第一列流量和压力
 u0=0.1; % initial volecity
 
-Q(k,1:NS)=0; % A*u0;
-H(k,2:NS)=0;
+Q(k,1:NS)=A*u0; % A*u0;
+H(k,2:NS)=Hr-(2:NS)*f*u0*u0*dx/(L*2*D);
 H(1,1)=Hr;
 
 while t<t_max
-   for j=2:N
+    for j=2:N
         CP=H(k,j-1)+B*Q(k,j-1)-R*Q(k,j-1)*abs(Q(k,j-1));    % +dt*Q(k,j-1)/A;    % CP==C-==CR
         CM=H(k,j+1)-B*Q(k,j+1)+R*Q(k,j+1)*abs(Q(k,j+1));    % -dt*Q(k,j+1)/A;    % CM==C+==CL
         H(k+1,j)=(CP+CM)/2;                                 % 计算压头
         Q(k+1,j)=(H(k+1,j)-CM)/(B);                         % 计算流量
-         
-   end
-    
+
+    end
+
     % 边界值
-    CP=H(k,N)+B*Q(k,N)-R*Q(k,N)*abs(Q(k,N));    % +dt*Q(k,N)/A;    % 单独计算CP
-    CM=H(k,2)-B*Q(k,2)+R*Q(k,2)*abs(Q(k,2));    % -dt*Q(k,2)/A;    % 单独计算CM
+    CP=H(k+1,N)+B*Q(k+1,N)-R*Q(k+1,N)*abs(Q(k+1,N));    % +dt*Q(k,N)/A;    % 单独计算CP
+    CM=H(k+1,2)-B*Q(k+1,2)+R*Q(k+1,2)*abs(Q(k+1,2));    % -dt*Q(k,2)/A;    % 单独计算CM
 
     H(k+1,1)=Hr;                                % 压头第一列
     Q(k+1,1)=(H(k+1,1)-CM)/B;                   % 流量第一列数值，边界条件公式
-    
+
     Q(k+1,NS)=0;                                % 流量最后一列
     H(k+1,NS)=CP;                               % 压头最后一列数值，边界条件公式
+
+    %H(k+1,1)=Hr;
+    %H(k+1,NS)=H(k+1,N)+a/G*Q(k+1,N);
+    %Q(k+1,NS)=0;
+    %Q(k+1,1)=Q(k+1,2)+G/a*(H(k+1,1)-H(k+1,2));
 
     t=t+dt;
     k=k+1;
     time(k)=t;
-    
+
 end
 toc
-
+hold on;
 plot(time,H(:,N+1))
+plot(time,70*ones(size(H)))
 title('MOC-阀门处圧力曲线');
 xlabel('单位：s');
 ylabel('单位：m');
