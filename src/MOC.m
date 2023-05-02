@@ -18,7 +18,8 @@ A=pi*(D^2)/4;                     % 管道横截面积
 dx=L/N;                         % 单位长度
 t_max=20;                       % 总计算时间
 a=sqrt(K/Rho/(1+K*D/(E*e)));     % 波速
-dt=.8*dx/a;                        % 单位计算时间
+dt=dx/a;                        % 单位计算时间
+
 k=1;
 t=0;time(k)=t;
 
@@ -27,7 +28,9 @@ B=a/(G*A);
 R=f*dx/(2*G*D*(A^2));
 
 % 第一列流量和压力
-Q(k,1:NS)=0;
+u0=0.1; % initial volecity
+
+Q(k,1:NS)=0; % A*u0;
 H(k,2:NS)=0;
 H(1,1)=Hr;
 
