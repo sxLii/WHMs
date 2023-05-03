@@ -1,5 +1,5 @@
 clear; close all; clc;
-
+tic
 % initial
 L=500;
 f=0.02;
@@ -78,6 +78,7 @@ time(k+1)=t;
 time=time';
 h=hh*lambdah;
 v=vv*lambdau;
+toc
 % Plot results.
 plot(time(:),hh(:,end-1))
 title('Solution');
