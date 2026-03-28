@@ -94,6 +94,57 @@ def simulate_instant_valve_closure():
     return time, H, Q, dt, a
 
 
+def moc_solve(N=25):
+    """Run MOC and return results plus all physical parameters as a dict."""
+    L = 300.0; Hr = 70.0; NS = N + 1
+    e = 0.001651; D = 0.00635 - 2.0 * e
+    K = 2.1e9; rho = 1000.0; E = 2.1e11
+    g = 9.806; f = 0.018
+    A = np.pi * D**2 / 4.0
+    dx = L / N; t_max = 20.0
+    a = np.sqrt(K / rho / (1.0 + K * D / (E * e)))
+    dt = dx / a; u0 = 0.1
+    B = a / (g * A); R = f * dx / (2.0 * g * D * A**2)
+    x = np.arange(NS) * dx
+
+    n_steps = int(np.ceil(t_max / dt)) + 1
+    time = np.zeros(n_steps)
+    H = np.zeros((n_steps, NS))
+    Q = np.zeros((n_steps, NS))
+
+    Q[0, :] = A * u0
+    H[0, :] = Hr - f * x * u0**2 / (2.0 * g * D)
+    H[0, 0] = Hr
+
+    last = 0
+    for k in range(n_steps - 1):
+        for j in range(1, N):
+            CP = H[k, j-1] + B * Q[k, j-1] - R * Q[k, j-1] * abs(Q[k, j-1])
+            CM = H[k, j+1] - B * Q[k, j+1] + R * Q[k, j+1] * abs(Q[k, j+1])
+            H[k+1, j] = 0.5 * (CP + CM)
+            Q[k+1, j] = (H[k+1, j] - CM) / B
+
+        CM = H[k, 1] - B * Q[k, 1] + R * Q[k, 1] * abs(Q[k, 1])
+        H[k+1, 0] = Hr
+        Q[k+1, 0] = (H[k+1, 0] - CM) / B
+
+        CP = H[k, N-1] + B * Q[k, N-1] - R * Q[k, N-1] * abs(Q[k, N-1])
+        Q[k+1, N] = 0.0
+        H[k+1, N] = CP
+
+        time[k+1] = time[k] + dt
+        last = k + 1
+        if time[k+1] >= t_max:
+            break
+
+    return {
+        "time": time[:last+1], "x": x, "H": H[:last+1], "Q": Q[:last+1],
+        "L": L, "Hr": Hr, "N": N, "NS": NS, "e": e, "D": D,
+        "K": K, "rho": rho, "E": E, "g": g, "f": f, "A": A,
+        "dx": dx, "t_max": t_max, "a": a, "dt": dt, "B": B, "R": R, "u0": u0,
+    }
+
+
 def main():
     start = timer.perf_counter()
     time, H, Q, dt, a = simulate_instant_valve_closure()

@@ -7,119 +7,31 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 
+from MOC import moc_solve
+
 
 def moc_reference():
-    """
-    Reference MOC solution for instantaneous valve closure.
-
-    Returns
-    -------
-    tuple[np.ndarray, np.ndarray, np.ndarray, dict]
-        Time, head history, discharge history, and metadata.
-    """
-    L = 300.0
-    Hr = 70.0
-    N = 25
-    NS = N + 1
-    e = 0.001651
-    D = 0.00635 - 2.0 * e
-    K = 2.1e9
-    rho = 1000.0
-    E = 2.1e11
-    g = 9.806
-    f = 0.018
-    A = np.pi * D**2 / 4.0
-
-    dx = L / N
-    t_max = 20.0
-    a = np.sqrt(K / rho / (1.0 + K * D / (E * e)))
-    dt = dx / a
-
-    B = a / (g * A)
-    R = f * dx / (2.0 * g * D * A**2)
-    u0 = 0.1
-
-    n_steps = int(np.ceil(t_max / dt)) + 1
-    time_hist = np.zeros(n_steps)
-    H = np.zeros((n_steps, NS))
-    Q = np.zeros((n_steps, NS))
-
-    x = np.arange(NS) * dx
-    H[0, :] = Hr - f * x * u0**2 / (2.0 * g * D)
-    H[0, 0] = Hr
-    Q[0, :] = A * u0
-
-    last = 0
-    for n in range(n_steps - 1):
-        for j in range(1, N):
-            CP = H[n, j - 1] + B * Q[n, j - 1] - R * Q[n, j - 1] * abs(Q[n, j - 1])
-            CM = H[n, j + 1] - B * Q[n, j + 1] + R * Q[n, j + 1] * abs(Q[n, j + 1])
-
-            H[n + 1, j] = 0.5 * (CP + CM)
-            Q[n + 1, j] = (H[n + 1, j] - CM) / B
-
-        CM = H[n, 1] - B * Q[n, 1] + R * Q[n, 1] * abs(Q[n, 1])
-        H[n + 1, 0] = Hr
-        Q[n + 1, 0] = (H[n + 1, 0] - CM) / B
-
-        CP = H[n, N - 1] + B * Q[n, N - 1] - R * Q[n, N - 1] * abs(Q[n, N - 1])
-        Q[n + 1, N] = 0.0
-        H[n + 1, N] = CP
-
-        time_hist[n + 1] = time_hist[n] + dt
-        last = n + 1
-        if time_hist[n + 1] >= t_max:
-            break
-
-    meta = {"L": L, "Hr": Hr, "N": N, "NS": NS, "e": e, "D": D, "K": K, "rho": rho, "E": E, "g": g, "f": f, "A": A, "dx": dx, "t_max": t_max, "a": a, "dt": dt, "B": B, "R": R, "u0": u0}
-    return time_hist[: last + 1], H[: last + 1], Q[: last + 1], meta
+    ref = moc_solve(N=25)
+    meta = {k: ref[k] for k in ["L", "Hr", "N", "NS", "e", "D", "K", "rho", "E", "g", "f", "A", "dx", "t_max", "a", "dt", "B", "R", "u0"]}
+    return ref["time"], ref["H"], ref["Q"], meta
 
 
 def flux(U, c_hq, c_qh):
-    """
-    Physical flux for the linear water-hammer system in [H, Q] variables.
-    """
     H = U[0]
     Q = U[1]
     return np.array([c_hq * Q, c_qh * H], dtype=float)
 
 
 def exact_linear_flux(U_left, U_right, a, c_hq, c_qh):
-    """
-    Exact upwind/Roe flux for the constant-coefficient linear system.
-
-    Since the Jacobian satisfies A^2 = a^2 I, we have |A| = a I.
-    """
     return 0.5 * (flux(U_left, c_hq, c_qh) + flux(U_right, c_hq, c_qh)) - 0.5 * a * (U_right - U_left)
 
 
 def friction_source(U, f, D, A):
-    """
-    Darcy-Weisbach friction source written in discharge form.
-
-    The sign is always opposite to the discharge direction.
-    """
     H, Q = U
     return np.array([0.0, -f * Q * abs(Q) / (2.0 * D * A)], dtype=float)
 
 
 def run_fvm_aligned():
-    """
-    FVM version aligned with the MOC setup as closely as possible.
-
-    Alignment choices:
-    1. Same physical parameters as MOC.
-    2. Same grid: N = 25, NS = 26.
-    3. Same time step: dt = dx / a.
-    4. Same initial steady-state head profile.
-    5. Same state variables: [H, Q] instead of [H, velocity].
-    6. Same boundary semantics: fixed upstream head and closed downstream valve.
-
-    Returns
-    -------
-    tuple[np.ndarray, np.ndarray, np.ndarray, dict]
-        Time, head history, discharge history, and metadata.
-    """
     time_ref, H_ref, Q_ref, meta = moc_reference()
     L = meta["L"]
     Hr = meta["Hr"]
@@ -135,7 +47,6 @@ def run_fvm_aligned():
     dt = meta["dt"]
     u0 = meta["u0"]
 
-    # Constant-coefficient linearized water-hammer system in [H, Q].
     c_hq = a**2 / (g * A)
     c_qh = g * A
 
@@ -157,7 +68,6 @@ def run_fvm_aligned():
 
         U_new = U_old.copy()
 
-        # Interior update with exact linear upwind flux and source splitting.
         for j in range(1, N):
             U_jm1 = U_old[:, j - 1]
             U_j = U_old[:, j]
@@ -169,7 +79,6 @@ def run_fvm_aligned():
             U_star = U_j - (dt / dx) * (F_r - F_l)
             U_new[:, j] = U_star + dt * friction_source(U_star, f, D, A)
 
-        # MOC-style boundary reconstruction to make the comparison fair.
         B = a / (g * A)
         R = f * dx / (2.0 * g * D * A**2)
 
