@@ -19,7 +19,7 @@ def simulate_instant_valve_closure():
     # Pipe and fluid parameters
     L = 300.0                    # Pipe length (m)
     Hr = 70.0                    # Reservoir / pump head (m)
-    N = 10                       # Number of pipe reaches
+    N = 100                       # Number of pipe reaches
     NS = N + 1                   # Number of nodes
     e = 0.001651                 # Wall thickness (m), 0.065 in
     D = 0.00635 - 2.0 * e        # Inner diameter (m)

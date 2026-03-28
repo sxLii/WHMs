@@ -1,231 +1,234 @@
+
 import time
 from pathlib import Path
 
+import matplotlib
+matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 
 
-def physical_flux(state: np.ndarray, average_velocity: float, g: float, c: float) -> np.ndarray:
+def moc_reference():
     """
-    Compute the physical flux for the 1D water-hammer system.
-
-    Parameters
-    ----------
-    state : np.ndarray
-        State vector [head, velocity].
-    average_velocity : float
-        Arithmetic mean of the left and right velocities.
-    g : float
-        Gravitational acceleration.
-    c : float
-        Wave speed.
+    Reference MOC solution for instantaneous valve closure.
 
     Returns
     -------
-    np.ndarray
-        Flux vector.
+    tuple[np.ndarray, np.ndarray, np.ndarray, dict]
+        Time, head history, discharge history, and metadata.
     """
-    head, velocity = state
-    return np.array(
-        [
-            average_velocity * head + (c**2 / g) * velocity,
-            g * head + average_velocity * velocity,
-        ],
-        dtype=float,
-    )
-
-
-
-def godunov_flux(right_state: np.ndarray, left_state: np.ndarray, g: float, c: float) -> np.ndarray:
-    """
-    Compute the Godunov-type numerical flux.
-
-    Parameters
-    ----------
-    right_state : np.ndarray
-        State on the right side of the interface [head, velocity].
-    left_state : np.ndarray
-        State on the left side of the interface [head, velocity].
-    g : float
-        Gravitational acceleration.
-    c : float
-        Wave speed.
-
-    Returns
-    -------
-    np.ndarray
-        Numerical flux vector.
-    """
-    delta_head = right_state[0] - left_state[0]
-    delta_velocity = right_state[1] - left_state[1]
-    average_velocity = 0.5 * (right_state[1] + left_state[1])
-
-    c_minus = (
-        0.5
-        * (delta_head - (c / g) * delta_velocity)
-        * abs(average_velocity - c)
-        * np.array([1.0, -g / c], dtype=float)
-    )
-    c_plus = (
-        0.5
-        * (delta_head + (c / g) * delta_velocity)
-        * abs(average_velocity + c)
-        * np.array([1.0, g / c], dtype=float)
-    )
-
-    return 0.5 * (
-        physical_flux(right_state, average_velocity, g, c)
-        + physical_flux(left_state, average_velocity, g, c)
-    ) - 0.5 * (c_plus + c_minus)
-
-
-
-def source_term(state: np.ndarray, g: float, f: float, diameter: float) -> np.ndarray:
-    """
-    Compute the source term.
-
-    The friction term is written as u * |u| so that friction always opposes
-    the flow direction.
-
-    Parameters
-    ----------
-    state : np.ndarray
-        State vector [head, velocity].
-    g : float
-        Gravitational acceleration.
-    f : float
-        Darcy-Weisbach friction factor.
-    diameter : float
-        Inner pipe diameter.
-
-    Returns
-    -------
-    np.ndarray
-        Source vector.
-    """
-    velocity = state[1]
-    return np.array([0.0, -g * f * velocity * abs(velocity) / (2.0 * diameter)], dtype=float)
-
-
-
-def run_simulation() -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-    """
-    Simulate instantaneous valve closure using a finite-volume scheme.
-
-    Returns
-    -------
-    tuple[np.ndarray, np.ndarray, np.ndarray]
-        time, head, velocity histories.
-    """
-    # Physical parameters
-    pipe_length = 300.0
-    reservoir_head = 70.0
-    num_cells = 25
-    num_nodes = num_cells + 1
-    wall_thickness = 0.001651
-    diameter = 0.00635 - 2.0 * wall_thickness
-    bulk_modulus = 2.1e9
-    density = 1000.0
-    young_modulus = 2.1e11
+    L = 300.0
+    Hr = 70.0
+    N = 25
+    NS = N + 1
+    e = 0.001651
+    D = 0.00635 - 2.0 * e
+    K = 2.1e9
+    rho = 1000.0
+    E = 2.1e11
     g = 9.806
-    friction_factor = 0.018
+    f = 0.018
+    A = np.pi * D**2 / 4.0
 
-    # Mesh and time settings
-    cfl = 0.5
-    dx = pipe_length / num_cells
+    dx = L / N
     t_max = 20.0
-    wave_speed = np.sqrt(bulk_modulus / density / (1.0 + bulk_modulus * diameter / (young_modulus * wall_thickness)))
-    dt = cfl * dx / wave_speed
-    initial_velocity = 0.1
+    a = np.sqrt(K / rho / (1.0 + K * D / (E * e)))
+    dt = dx / a
 
-    x = np.linspace(0.0, pipe_length, num_nodes)
+    B = a / (g * A)
+    R = f * dx / (2.0 * g * D * A**2)
+    u0 = 0.1
 
-    # The initial head should decrease linearly along the pipe according to the
-    # steady Darcy-Weisbach head-loss relation.
-    initial_head = reservoir_head - friction_factor * x * initial_velocity**2 / (2.0 * g * diameter)
-    initial_head[0] = reservoir_head
+    n_steps = int(np.ceil(t_max / dt)) + 1
+    time_hist = np.zeros(n_steps)
+    H = np.zeros((n_steps, NS))
+    Q = np.zeros((n_steps, NS))
 
-    # Preallocate history arrays.
+    x = np.arange(NS) * dx
+    H[0, :] = Hr - f * x * u0**2 / (2.0 * g * D)
+    H[0, 0] = Hr
+    Q[0, :] = A * u0
+
+    last = 0
+    for n in range(n_steps - 1):
+        for j in range(1, N):
+            CP = H[n, j - 1] + B * Q[n, j - 1] - R * Q[n, j - 1] * abs(Q[n, j - 1])
+            CM = H[n, j + 1] - B * Q[n, j + 1] + R * Q[n, j + 1] * abs(Q[n, j + 1])
+
+            H[n + 1, j] = 0.5 * (CP + CM)
+            Q[n + 1, j] = (H[n + 1, j] - CM) / B
+
+        CM = H[n, 1] - B * Q[n, 1] + R * Q[n, 1] * abs(Q[n, 1])
+        H[n + 1, 0] = Hr
+        Q[n + 1, 0] = (H[n + 1, 0] - CM) / B
+
+        CP = H[n, N - 1] + B * Q[n, N - 1] - R * Q[n, N - 1] * abs(Q[n, N - 1])
+        Q[n + 1, N] = 0.0
+        H[n + 1, N] = CP
+
+        time_hist[n + 1] = time_hist[n] + dt
+        last = n + 1
+        if time_hist[n + 1] >= t_max:
+            break
+
+    meta = {"L": L, "Hr": Hr, "N": N, "NS": NS, "e": e, "D": D, "K": K, "rho": rho, "E": E, "g": g, "f": f, "A": A, "dx": dx, "t_max": t_max, "a": a, "dt": dt, "B": B, "R": R, "u0": u0}
+    return time_hist[: last + 1], H[: last + 1], Q[: last + 1], meta
+
+
+def flux(U, c_hq, c_qh):
+    """
+    Physical flux for the linear water-hammer system in [H, Q] variables.
+    """
+    H = U[0]
+    Q = U[1]
+    return np.array([c_hq * Q, c_qh * H], dtype=float)
+
+
+def exact_linear_flux(U_left, U_right, a, c_hq, c_qh):
+    """
+    Exact upwind/Roe flux for the constant-coefficient linear system.
+
+    Since the Jacobian satisfies A^2 = a^2 I, we have |A| = a I.
+    """
+    return 0.5 * (flux(U_left, c_hq, c_qh) + flux(U_right, c_hq, c_qh)) - 0.5 * a * (U_right - U_left)
+
+
+def friction_source(U, f, D, A):
+    """
+    Darcy-Weisbach friction source written in discharge form.
+
+    The sign is always opposite to the discharge direction.
+    """
+    H, Q = U
+    return np.array([0.0, -f * Q * abs(Q) / (2.0 * D * A)], dtype=float)
+
+
+def run_fvm_aligned():
+    """
+    FVM version aligned with the MOC setup as closely as possible.
+
+    Alignment choices:
+    1. Same physical parameters as MOC.
+    2. Same grid: N = 25, NS = 26.
+    3. Same time step: dt = dx / a.
+    4. Same initial steady-state head profile.
+    5. Same state variables: [H, Q] instead of [H, velocity].
+    6. Same boundary semantics: fixed upstream head and closed downstream valve.
+
+    Returns
+    -------
+    tuple[np.ndarray, np.ndarray, np.ndarray, dict]
+        Time, head history, discharge history, and metadata.
+    """
+    time_ref, H_ref, Q_ref, meta = moc_reference()
+    L = meta["L"]
+    Hr = meta["Hr"]
+    N = meta["N"]
+    NS = meta["NS"]
+    D = meta["D"]
+    g = meta["g"]
+    f = meta["f"]
+    A = meta["A"]
+    dx = meta["dx"]
+    t_max = meta["t_max"]
+    a = meta["a"]
+    dt = meta["dt"]
+    u0 = meta["u0"]
+
+    # Constant-coefficient linearized water-hammer system in [H, Q].
+    c_hq = a**2 / (g * A)
+    c_qh = g * A
+
     max_steps = int(np.ceil(t_max / dt)) + 1
-    time_hist = np.zeros(max_steps, dtype=float)
-    head_hist = np.zeros((max_steps, num_nodes), dtype=float)
-    vel_hist = np.zeros((max_steps, num_nodes), dtype=float)
+    time_hist = np.zeros(max_steps)
+    H = np.zeros((max_steps, NS))
+    Q = np.zeros((max_steps, NS))
 
-    head_hist[0, :] = initial_head
-    vel_hist[0, :] = initial_velocity
+    x = np.arange(NS) * dx
+    H[0, :] = Hr - f * x * u0**2 / (2.0 * g * D)
+    H[0, 0] = Hr
+    Q[0, :] = A * u0
 
-    step = 0
-    t = 0.0
+    last = 0
+    for n in range(max_steps - 1):
+        H_old = H[n].copy()
+        Q_old = Q[n].copy()
+        U_old = np.vstack([H_old, Q_old])
 
-    while t < t_max - 1e-14:
-        dt_step = min(dt, t_max - t)
-        lam = dt_step / dx
+        U_new = U_old.copy()
 
-        head_old = head_hist[step, :]
-        vel_old = vel_hist[step, :]
-        head_new = head_old.copy()
-        vel_new = vel_old.copy()
+        # Interior update with exact linear upwind flux and source splitting.
+        for j in range(1, N):
+            U_jm1 = U_old[:, j - 1]
+            U_j = U_old[:, j]
+            U_jp1 = U_old[:, j + 1]
 
-        # Update interior nodes.
-        for j in range(1, num_cells):
-            state_center = np.array([head_old[j], vel_old[j]], dtype=float)
-            state_left = np.array([head_old[j - 1], vel_old[j - 1]], dtype=float)
-            state_right = np.array([head_old[j + 1], vel_old[j + 1]], dtype=float)
+            F_l = exact_linear_flux(U_jm1, U_j, a, c_hq, c_qh)
+            F_r = exact_linear_flux(U_j, U_jp1, a, c_hq, c_qh)
 
-            updated_state = (
-                state_center
-                + dt_step * source_term(state_center, g, friction_factor, diameter)
-                - lam
-                * (
-                    godunov_flux(state_right, state_center, g, wave_speed)
-                    - godunov_flux(state_center, state_left, g, wave_speed)
-                )
-            )
+            U_star = U_j - (dt / dx) * (F_r - F_l)
+            U_new[:, j] = U_star + dt * friction_source(U_star, f, D, A)
 
-            head_new[j] = updated_state[0]
-            vel_new[j] = updated_state[1]
+        # MOC-style boundary reconstruction to make the comparison fair.
+        B = a / (g * A)
+        R = f * dx / (2.0 * g * D * A**2)
 
-        # Upstream boundary: fixed reservoir head.
-        head_new[0] = reservoir_head
-        vel_new[0] = vel_new[1] + (g / wave_speed) * (head_new[0] - head_new[1])
+        CM = H_old[1] - B * Q_old[1] + R * Q_old[1] * abs(Q_old[1])
+        U_new[0, 0] = Hr
+        U_new[1, 0] = (Hr - CM) / B
 
-        # Downstream boundary: instantaneous valve closure.
-        vel_new[-1] = 0.0
-        head_new[-1] = head_new[-2] + (wave_speed / g) * (vel_new[-2] - vel_new[-1])
+        CP = H_old[N - 1] + B * Q_old[N - 1] - R * Q_old[N - 1] * abs(Q_old[N - 1])
+        U_new[1, N] = 0.0
+        U_new[0, N] = CP
 
-        step += 1
-        t += dt_step
-        time_hist[step] = t
-        head_hist[step, :] = head_new
-        vel_hist[step, :] = vel_new
+        H[n + 1] = U_new[0]
+        Q[n + 1] = U_new[1]
+        time_hist[n + 1] = time_hist[n] + dt
+        last = n + 1
+        if time_hist[n + 1] >= t_max:
+            break
 
-    return time_hist[: step + 1], head_hist[: step + 1, :], vel_hist[: step + 1, :]
+    meta_out = dict(meta)
+    meta_out.update({"c_hq": c_hq, "c_qh": c_qh})
+    return time_hist[: last + 1], H[: last + 1], Q[: last + 1], meta_out, time_ref, H_ref, Q_ref
 
 
-
-def main() -> None:
+def main():
     start = time.perf_counter()
-    time_hist, head_hist, vel_hist = run_simulation()
+    time_fvm, H_fvm, Q_fvm, meta, time_moc, H_moc, Q_moc = run_fvm_aligned()
     elapsed = time.perf_counter() - start
+
+    common_time = time_moc if len(time_moc) <= len(time_fvm) else time_fvm
+    valve_moc = np.interp(common_time, time_moc, H_moc[:, -1])
+    valve_fvm = np.interp(common_time, time_fvm, H_fvm[:, -1])
+
+    rel_l2 = np.linalg.norm(valve_fvm - valve_moc) / np.linalg.norm(valve_moc)
+    max_abs = np.max(np.abs(valve_fvm - valve_moc))
 
     output_dir = Path("png")
     output_dir.mkdir(parents=True, exist_ok=True)
-    figure_path = output_dir / "fvm_valve_head.png"
+    figure_path = output_dir / "fvm_vs_moc_valve_head.png"
 
     plt.figure(figsize=(8, 4.8))
-    plt.plot(time_hist, head_hist[:, -1], label="Valve head")
-    plt.title("FVM Pressure-Head Curve at the Valve")
-    plt.xlabel("Time (s)")
-    plt.ylabel("Head (m)")
+    plt.plot(time_moc, H_moc[:, -1], label="MOC valve head", linewidth=2.0)
+    plt.plot(time_fvm, H_fvm[:, -1], "--", label="Aligned FVM valve head", linewidth=1.8)
+    plt.title("FVM Aligned with MOC: Valve Head Comparison")
+    plt.xlabel("Time [s]")
+    plt.ylabel("Head [m]")
     plt.grid(True, alpha=0.3)
     plt.legend()
     plt.tight_layout()
     plt.savefig(figure_path, dpi=200)
     plt.close()
 
-    print(f"Simulation finished in {elapsed:.3f} s")
-    print(f"Number of saved time steps: {len(time_hist)}")
-    print(f"Final valve head: {head_hist[-1, -1]:.6f} m")
+    print(f"Wave speed a = {meta['a']:.6f} m/s")
+    print(f"dx = {meta['dx']:.6f} m")
+    print(f"dt = {meta['dt']:.6e} s")
+    print(f"Saved time steps (FVM) = {len(time_fvm)}")
+    print(f"Saved time steps (MOC) = {len(time_moc)}")
+    print(f"Valve-head relative L2 error = {rel_l2:.6e}")
+    print(f"Valve-head max absolute error = {max_abs:.6e} m")
+    print(f"Elapsed time = {elapsed:.6f} s")
     print(f"Figure saved to: {figure_path}")
 
 
