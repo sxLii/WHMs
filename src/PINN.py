@@ -270,12 +270,12 @@ def plot_results(
     plt.legend()
     plt.title("Training history")
     plt.tight_layout()
-    plt.savefig(f"{out_prefix}.png", dpi=200)
+    plt.savefig(f"png/{out_prefix}.png", dpi=200)
     plt.show()
 
 
 def main() -> None:
-    csv_path = Path("../data/case0.csv")
+    csv_path = Path("data/case0.csv")
     reaches = 51
     tlen = 199
     obs_nodes = [5, 20, 50]

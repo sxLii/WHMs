@@ -208,7 +208,7 @@ def main() -> None:
     time_hist, head_hist, vel_hist = run_simulation()
     elapsed = time.perf_counter() - start
 
-    output_dir = Path("/mnt/data")
+    output_dir = Path("png")
     output_dir.mkdir(parents=True, exist_ok=True)
     figure_path = output_dir / "fvm_valve_head.png"
 

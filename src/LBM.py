@@ -21,24 +21,30 @@ def simulate_lbm_instant_valve_closure():
     t0 = time.perf_counter()
 
     # ------------------------------------------------------------------
-    # Physical parameters
+    # Physical parameters  (consistent with FVM.py)
     # ------------------------------------------------------------------
-    L = 500.0          # Pipe length [m]
-    f = 0.02           # Darcy-Weisbach friction factor [-]
-    a = 1000.0         # Pressure wave speed [m/s]
-    Hr = 400.0         # Upstream reservoir head [m]
-    V0 = 3.25996       # Initial flow velocity [m/s]
-    D = 2.0            # Pipe diameter [m]
-    g = 9.81           # Gravity acceleration [m/s^2]
+    L = 300.0              # Pipe length [m]
+    Hr = 70.0              # Upstream reservoir head [m]
+    wall_thickness = 0.001651   # Pipe wall thickness [m]
+    D = 0.00635 - 2.0 * wall_thickness   # Inner pipe diameter [m]
+    bulk_modulus = 2.1e9   # Bulk modulus of water [Pa]
+    density = 1000.0       # Fluid density [kg/m^3]
+    young_modulus = 2.1e11 # Young's modulus of pipe wall [Pa]
+    g = 9.806              # Gravitational acceleration [m/s^2]
+    f = 0.018              # Darcy-Weisbach friction factor [-]
+    V0 = 0.1               # Initial flow velocity [m/s]
+    t_max = 20.0           # Total simulation time [s]
+
+    # Wave speed derived from material properties
+    a = np.sqrt(bulk_modulus / density / (1.0 + bulk_modulus * D / (young_modulus * wall_thickness)))
 
     # ------------------------------------------------------------------
     # Spatial and temporal discretization
     # ------------------------------------------------------------------
     nodes = 200
-    timesteps = 400
-
-    dx = L / nodes                 # Physical cell length [m]
-    dt = dx / a                    # Physical time step [s], consistent with lattice mapping
+    dx = L / nodes
+    dt = dx / a
+    timesteps = int(np.ceil(t_max / dt))
 
     # ------------------------------------------------------------------
     # Lattice / scaling parameters
@@ -141,7 +147,8 @@ if __name__ == '__main__':
     plt.ylabel('Head [m]')
     plt.tight_layout()
 
-    output_path = Path(__file__).with_name('lbm_valve_head.png')
+    output_path = Path("png") / "lbm_valve_head.png"
+    output_path.parent.mkdir(parents=True, exist_ok=True)
     plt.savefig(output_path, dpi=200)
     plt.close()
 

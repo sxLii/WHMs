@@ -1,4 +1,5 @@
 import time as timer
+from pathlib import Path
 import numpy as np
 import matplotlib.pyplot as plt
 
@@ -102,7 +103,11 @@ def main():
     print(f"Time step dt = {dt:.6e} s")
     print(f"Number of time steps = {len(time)}")
     print(f"Elapsed time = {elapsed:.6f} s")
-
+    
+    output_dir = Path("png")
+    output_dir.mkdir(parents=True, exist_ok=True)
+    figure_path = output_dir / "MOC_valve_head.png"
+    
     plt.figure(figsize=(8, 5))
     plt.plot(time, H[:, -1], label="Head at the closed valve")
     plt.plot(time, np.full_like(time, 70.0), "--", label="Reservoir head")
@@ -112,6 +117,7 @@ def main():
     plt.grid(True)
     plt.legend()
     plt.tight_layout()
+    plt.savefig(figure_path, dpi=200)
     plt.show()
 
 

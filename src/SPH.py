@@ -74,7 +74,7 @@ def apply_ghost_particles(head: np.ndarray, vel: np.ndarray, hr: float) -> None:
 # -----------------------------------------------------------------------------
 # Main solver
 # -----------------------------------------------------------------------------
-def simulate_sph_water_hammer(save_dir: str = "/mnt/data"):
+def simulate_sph_water_hammer(save_dir: str = "png/"):
     """Run an SPH-style water-hammer simulation.
 
     This Python version completes the unfinished MATLAB draft and fixes several
